@@ -1,0 +1,171 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+  "Description" : "Top level template",
+  "Parameters" : {
+    "KeyName": {
+      "Description" : "Name of an existing EC2 KeyPair to enable SSH access to the instances",
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "MinLength": "1",
+      "MaxLength": "255",
+      "AllowedPattern" : "[\\x20-\\x7E]*",
+      "ConstraintDescription" : "can contain only ASCII characters."
+    },
+    "VpcAvailabilityZone1" : {
+      "Type" : "String",
+      "Default" : "us-east-1a"
+    },
+    "VpcAvailabilityZone2" : {
+      "Type" : "String",
+      "Default" : "us-east-1c"
+    },
+    "VpcAvailabilityZone3" : {
+      "Type" : "String",
+      "Default" : "us-east-1d"
+    },
+    "vpccidr" : {
+      "Type" : "String",
+      "Default" : "10.1.0.0/16"
+    },
+    "pubcidr1" : {
+      "Type" : "String",
+      "Default" : "10.1.1.0/24"
+    },
+    "pubcidr2" : {
+      "Type" : "String",
+      "Default" : "10.1.2.0/24"
+    },
+    "pricidr1" : {
+      "Type" : "String",
+      "Default" : "10.1.3.0/24"
+    },
+    "pricidr2" : {
+      "Type" : "String",
+      "Default" : "10.1.4.0/24"
+    },
+    "Rdsinstanceclass": {
+      "Description": "Specify the RDS instance type to launch for all RDS instances",
+      "Type": "String",
+      "Default": "db.t2.micro"
+    },
+    "Rdsallocatedstorage": {
+      "Description": "Specify the storage to use for all RDS instances",
+      "Type": "String",
+      "Default": "100"
+    },
+    "Rdsmasterusername": {
+      "Description": "Specify the master username to use for all RDS instances",
+      "Type": "String",
+      "Default": "nclouds"
+    },
+    "Rdsmasterpassword": {
+      "Description": "Specify the master username password to use for all RDS instances",
+      "Type": "String",
+      "NoEcho": "true"
+    },
+    "RdsBackupRetentionPeriod": {
+      "Type": "String",
+      "Default": "30",
+      "Description": "The number of days for which automatic DB snapshots are retained"
+    },
+    "RdsIops": {
+      "Description": "Specify the Iops to use for all RDS instances",
+      "Type": "Number",
+      "Default": "1000"
+    }
+  },
+  "Resources" : {
+    "vpcstack": {
+      "Type" : "AWS::CloudFormation::Stack",
+      "Properties" : {
+        "TemplateURL" : "http://s3.amazonaws.com/cloudformation-templates1/vpc.json",
+        "Parameters" : {
+          "pubcidr1": { "Ref" : "pubcidr1" },
+          "pubcidr2":{ "Ref" : "pubcidr2" },
+          "pricidr1": { "Ref" : "pricidr1" },
+          "pricidr2": { "Ref" : "pricidr2" },
+          "vpccidr": { "Ref" : "vpccidr" },
+          "KeyName": { "Ref" : "KeyName" },
+          "Stackname" : { "Ref" : "AWS::StackName" },
+          "AvailabilityZone1" : { "Ref" : "VpcAvailabilityZone1"},
+          "AvailabilityZone2" : { "Ref" : "VpcAvailabilityZone2"},
+          "AvailabilityZone3" : { "Ref" : "VpcAvailabilityZone3"}
+        }
+      }
+    },
+    "rds": {
+      "Type": "AWS::CloudFormation::Stack",
+      "Properties": {
+        "TemplateURL": "http://s3.amazonaws.com/cloudformation-templates1/rds.json",
+        "Parameters": {
+          "PrivateSubnet1": {
+            "Fn::GetAtt": [
+              "vpcstack",
+              "Outputs.prvsub1"
+            ]
+          },
+          "PrivateSubnet2": {
+            "Fn::GetAtt": [
+              "vpcstack",
+              "Outputs.prvsub2"
+            ]
+          },
+          "VpcId": {
+            "Fn::GetAtt": [
+              "vpcstack",
+              "Outputs.VpcId"
+            ]
+          },
+          "DBIdentify": {
+            "Fn::Join": [
+              "-",
+              [
+                {
+                  "Ref": "AWS::StackName"
+                },
+                "rds"
+              ]
+            ]
+          },
+          "DBname": {
+            "Ref": "AWS::StackName"
+          },
+          "RdsIops": {
+            "Ref": "RdsIops"
+          },
+          "BackupRetentionPeriod": {
+            "Ref": "RdsBackupRetentionPeriod"
+          },
+          "Rdsinstanceclass": {
+            "Ref": "Rdsinstanceclass"
+          },
+          "Rdsallocatedstorage": {
+            "Ref": "Rdsallocatedstorage"
+          },
+          "Rdsmasterusername": {
+            "Ref": "Rdsmasterusername"
+          },
+          "Rdsmasterpassword": {
+            "Ref": "Rdsmasterpassword"
+          }
+        }
+      }
+    },
+    "opsworks": {
+      "Type" : "AWS::CloudFormation::Stack",
+      "Properties" : {
+        "TemplateURL" : "http://s3.amazonaws.com/cloudformation-templates1/opsworks.json",
+        "Parameters" : {
+          "PrivateSubnet1" : { "Fn::GetAtt" : [ "vpcstack", "Outputs.prvsub1" ] },
+          "PrivateSubnet2" : { "Fn::GetAtt" : [ "vpcstack", "Outputs.prvsub2" ] },
+          "PublicSubnet1" : { "Fn::GetAtt" : [ "vpcstack", "Outputs.pubsub1" ] },
+          "PublicSubnet2" : { "Fn::GetAtt" : [ "vpcstack", "Outputs.pubsub2" ] },
+          "VpcId" : { "Fn::GetAtt" : [ "vpcstack", "Outputs.VpcId" ] },
+          "KeyName": { "Ref" : "KeyName" },
+          "Stackname" : { "Ref" : "AWS::StackName"}
+        }
+      }
+    }
+
+
+  }
+}

@@ -1,0 +1,335 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+  "Description" : "Blueshift Opsworks Template",
+
+  "Parameters" : {
+    "KeyName": {
+      "Type": "AWS::EC2::KeyPair::KeyName"
+    },
+    "PrivateSubnet1" : {
+      "Type" : "String"
+    },
+    "PrivateSubnet2" : {
+      "Type" : "String"
+    },
+    "PublicSubnet1" : {
+      "Type" : "String"
+    },
+    "PublicSubnet2" : {
+      "Type" : "String"
+    },
+    "VpcId" : {
+      "Type" : "String"
+    },
+    "Stackname" : {
+      "Type" : "String"
+    }
+  },
+
+  "Resources" : {
+
+  "OpsWorksStack": {
+      "Type": "AWS::OpsWorks::Stack",
+      "Properties": {
+        "Name": { "Ref" : "Stackname" },
+        "ServiceRoleArn": {
+          "Fn::GetAtt": [
+            "OpsWorksServiceRole",
+            "Arn"
+          ]
+        },
+        "DefaultInstanceProfileArn": {
+          "Fn::GetAtt": [
+            "OpsWorksInstanceProfile",
+            "Arn"
+          ]
+        },
+        "DefaultSshKeyName" : {
+          "Ref" : "KeyName"
+        },
+        "DefaultOs":"Amazon Linux 2015.09",
+        "DefaultRootDeviceType":"ebs",
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "DefaultSubnetId": {
+          "Ref": "PrivateSubnet1"
+        },
+        "UseCustomCookbooks" : false,
+        "UseOpsworksSecurityGroups" : true,
+	      "ConfigurationManager" : {
+	        "Name" : "Chef",
+	        "Version" : "11.10"
+	      },
+	      "ChefConfiguration" : {
+	        "BerkshelfVersion" : "3.2.0",
+          "ManageBerkshelf" : true
+	      }
+	    }	
+    },
+    "AppLayer": {
+      "Type": "AWS::OpsWorks::Layer",
+      "Metadata" : {
+        "Comment" : "App Layer"
+      },
+      "Properties": {
+        "StackId": {
+          "Ref": "OpsWorksStack"
+        },
+        "Name": { "Fn::Join" : [ "-", [ { "Ref": "Stackname" }, "app"] ] },
+        "Type": "custom",
+        "Shortname":  { "Fn::Join" : [ "-", [ { "Ref": "Stackname" }, "app"] ] },
+        "EnableAutoHealing": "true",
+        "AutoAssignElasticIps": "false",
+        "AutoAssignPublicIps": "false"
+      }
+    },
+    "RabbitMQLayer": {
+      "Type": "AWS::OpsWorks::Layer",
+      "Metadata" : {
+        "Comment" : "RabbitMQ Layer"
+      },
+      "Properties": {
+        "StackId": {
+          "Ref": "OpsWorksStack"
+        },
+        "Name": { "Fn::Join" : [ "-", [ { "Ref": "Stackname" }, "rabbitmq"] ] },
+        "Type": "custom",
+        "Shortname":  { "Fn::Join" : [ "-", [ { "Ref": "Stackname" }, "rabbitmq"] ] },
+        "EnableAutoHealing": "true",
+        "AutoAssignElasticIps": "false",
+        "AutoAssignPublicIps": "false"
+      }
+    },
+    "CeleryLayer": {
+      "Type": "AWS::OpsWorks::Layer",
+      "Metadata" : {
+        "Comment" : "Celery Layer"
+      },
+      "Properties": {
+        "StackId": {
+          "Ref": "OpsWorksStack"
+        },
+        "Name": { "Fn::Join" : [ "-", [ { "Ref": "Stackname" }, "celery"] ] },
+        "Type": "custom",
+        "Shortname":  { "Fn::Join" : [ "-", [ { "Ref": "Stackname" }, "celery"] ] },
+        "EnableAutoHealing": "true",
+        "AutoAssignElasticIps": "false",
+        "AutoAssignPublicIps": "false"
+      }
+    },
+    "CeleryBeatLayer": {
+      "Type": "AWS::OpsWorks::Layer",
+      "Metadata" : {
+        "Comment" : "Celery Beat Layer"
+      },
+      "Properties": {
+        "StackId": {
+          "Ref": "OpsWorksStack"
+        },
+        "Name": { "Fn::Join" : [ "-", [ { "Ref": "Stackname" }, "celery-beat"] ] },
+        "Type": "custom",
+        "Shortname":  { "Fn::Join" : [ "-", [ { "Ref": "Stackname" }, "celery-beat"] ] },
+        "EnableAutoHealing": "true",
+        "AutoAssignElasticIps": "false",
+        "AutoAssignPublicIps": "false"
+      }
+    },    
+
+    "AppELB": {
+      "Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+      "Properties": {
+        "LoadBalancerName": {
+          "Fn::Join": [
+            "-",
+            [
+              {
+                "Ref": "Stackname"
+              },
+              "AppELB"
+            ]
+          ]
+        },
+        "SecurityGroups": [
+          {
+            "Ref": "AppELBSG"
+          }
+        ],
+        "Subnets": [
+          {
+            "Ref": "PublicSubnet1"
+          },
+          {
+            "Ref": "PublicSubnet2"
+          }
+        ],
+        "Listeners": [
+          {
+            "LoadBalancerPort": "80",
+            "InstancePort": "80",
+            "Protocol": "HTTP"
+          }
+        ],
+        "ConnectionDrainingPolicy": {
+          "Enabled": true,
+          "Timeout": 10
+        },
+        "HealthCheck": {
+          "Target": "HTTP:80/",
+          "HealthyThreshold": "3",
+          "UnhealthyThreshold": "5",
+          "Interval": "9",
+          "Timeout": "6"
+        }
+      }
+    },
+    "AppELBSG": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Enable HTTP access on port 80, 443",
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "80",
+            "ToPort": "80",
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "443",
+            "ToPort": "443",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ],
+        "SecurityGroupEgress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "0",
+            "ToPort": "65535",
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "udp",
+            "FromPort": "0",
+            "ToPort": "65535",
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "icmp",
+            "FromPort": "-1",
+            "ToPort": "-1",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {
+                    "Ref": "AWS::StackName"
+                  },
+                  "AppELBSG"
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "AppELBAttachment": {
+      "Type": "AWS::OpsWorks::ElasticLoadBalancerAttachment",
+      "Properties": {
+        "ElasticLoadBalancerName": {
+          "Ref": "AppELB"
+        },
+        "LayerId": {
+          "Ref": "AppLayer"
+        }
+      }
+    },
+
+
+    "OpsWorksServiceRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  "opsworks.amazonaws.com"
+                ]
+              },
+              "Action": [
+                "sts:AssumeRole"
+              ]
+            }
+          ]
+        },
+        "Path": "/",
+        "Policies": [
+          {
+            "PolicyName": "opsworks-service",
+            "PolicyDocument": {
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                   "ec2:*", "iam:PassRole",
+                   "cloudwatch:GetMetricStatistics",
+                   "cloudwatch:DescribeAlarms",
+                   "ecs:*",
+                   "elasticloadbalancing:*",
+                   "rds:*",
+                   "s3:*"
+                  ],
+                  "Resource": "*"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+
+   "OpsWorksInstanceRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  "ec2.amazonaws.com"
+                ]
+              },
+              "Action": [
+                "sts:AssumeRole"
+              ]
+            }
+          ]
+        },
+        "Path": "/"
+      }
+    },
+    "OpsWorksInstanceProfile": {
+      "Type": "AWS::IAM::InstanceProfile",
+      "Properties": {
+        "Path": "/",
+        "Roles": [
+          {
+            "Ref": "OpsWorksInstanceRole"
+          }
+        ]
+      }
+    }
+  }
+}

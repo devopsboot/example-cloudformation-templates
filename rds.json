@@ -1,0 +1,154 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "RDS instance(s) for nOps",
+  "Parameters": {
+    "VpcId": {
+      "Type": "String"
+    },
+    "BackupRetentionPeriod": {
+      "Type": "String",
+      "Description": "The number of days for which automatic DB snapshots are retained"
+    },
+    "RdsIops": {
+      "Description": "Specify the Iops to use for all RDS instances",
+      "Type": "Number",
+      "Default": "1000"
+    },
+    "DBname": {
+      "Type": "String"
+    },
+    "DBIdentify": {
+      "Type": "String"
+    },
+    "Rdsinstanceclass": {
+      "Description": "Specify the RDS instance type to launch",
+      "Type": "String",
+      "Default": "db.t2.micro"
+    },
+    "Rdsallocatedstorage": {
+      "Type": "String"
+    },
+    "Rdsmasterusername": {
+      "Type": "String"
+    },
+    "Rdsmasterpassword": {
+      "Type": "String",
+      "NoEcho": "true"
+    },
+    "PrivateSubnet1": {
+      "Type": "String"
+    },
+    "PrivateSubnet2": {
+      "Type": "String"
+    }
+  },
+  "Resources": {
+    "RDSSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Allow Access to Database",
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "3306",
+            "ToPort": "3306",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {
+                    "Ref": "AWS::StackName"
+                  },
+                  "RDSSg"
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "DBinstancemain": {
+      "Type": "AWS::RDS::DBInstance",
+      "Properties": {
+        "DBInstanceIdentifier": {
+          "Ref": "DBIdentify"
+        },
+        "AllocatedStorage": {
+          "Ref": "Rdsallocatedstorage"
+        },
+        "MultiAZ": "true",
+        "Iops": {
+          "Ref": "RdsIops"
+        },
+        "DBInstanceClass": {
+          "Ref": "Rdsinstanceclass"
+        },
+        "DBName": {
+          "Ref": "DBname"
+        },
+        "VPCSecurityGroups": [
+          {
+            "Ref": "RDSSecurityGroup"
+          }
+        ],
+        "DBSubnetGroupName": {
+          "Ref": "DBSubnetGroup"
+        },
+        "EngineVersion": "5.6.22",
+        "Engine": "MySQL",
+        "MasterUserPassword": {
+          "Ref": "Rdsmasterpassword"
+        },
+        "MasterUsername": {
+          "Ref": "Rdsmasterusername"
+        },
+        "BackupRetentionPeriod": {
+          "Ref": "BackupRetentionPeriod"
+        }
+      }
+    },
+    "DBSubnetGroup": {
+      "Type": "AWS::RDS::DBSubnetGroup",
+      "Properties": {
+        "DBSubnetGroupDescription": "description",
+        "SubnetIds": [
+          {
+            "Ref": "PrivateSubnet1"
+          },
+          {
+            "Ref": "PrivateSubnet2"
+          }
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "DBinstancemainEndpoint": {
+      "Description": "End Point of the main RDS instance",
+      "Value": {
+        "Fn::GetAtt": [
+          "DBinstancemain",
+          "Endpoint.Address"
+        ]
+      }
+    },
+    "DBinstancemainPort": {
+      "Description": "End port of the main RDS instance",
+      "Value": {
+        "Fn::GetAtt": [
+          "DBinstancemain",
+          "Endpoint.Port"
+        ]
+      }
+    }
+  }
+}
